@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # SQS Worker - Processes documents from SQS queue
+  sqs-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lendingwise-workers:latest
+    container_name: lendingwise-sqs-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-2}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DB_HOST=${DB_HOST:-3.129.145.187}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_USER=${DB_USER:-aiagentdb}
+      - DB_PASSWORD=${DB_PASSWORD:-Agents@1252}
+      - DB_NAME=${DB_NAME:-stage_newskinny}
+      - OCR_MODE=${OCR_MODE:-ocr+llm}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./outputs:/app/outputs
+      - ./Nodes/outputs:/app/Nodes/outputs
+      - ./result:/app/result
+    networks:
+      - lendingwise-network
+    command: python sqs_worker.py
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # If running on EC2 with IAM role, AWS credentials from environment are used automatically
+
+  # Cross-Validation Watcher - Monitors and validates processed documents
+  cross-validation-watcher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lendingwise-workers:latest
+    container_name: lendingwise-cross-validation-watcher
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-2}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DB_HOST=${DB_HOST:-3.129.145.187}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_USER=${DB_USER:-aiagentdb}
+      - DB_PASSWORD=${DB_PASSWORD:-Agents@1252}
+      - DB_NAME=${DB_NAME:-stage_newskinny}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./cross_validation/reports:/app/cross_validation/reports
+      - ./result:/app/result
+    networks:
+      - lendingwise-network
+    command: python run_cross_validation_watcher.py --interval 5
+    depends_on:
+      - sqs-worker
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  lendingwise-network:
+    driver: bridge
+
