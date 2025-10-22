@@ -5,6 +5,8 @@ Ingestion node for processing SQS messages and extracting document metadata.
 import os
 import json
 import time
+import re
+import datetime
 from typing import Optional
 from urllib.parse import unquote_plus
 
@@ -14,6 +16,173 @@ from botocore.exceptions import ClientError
 import boto3
 from ..tools.aws_services import get_s3_client
 from ..tools.db import fetch_agent_context
+
+
+# ---------- S3 Upload Utilities (from s3_uploader.py) ----------
+BUCKET = "lendingwise-aiagent"
+ROOT_PREFIX = "LMRFileDocNew"
+
+
+def sanitize_name(name: str) -> str:
+    """Sanitize filename by removing special characters."""
+    name = name.strip().replace("\\", "/").split("/")[-1]
+    return re.sub(r"[^A-Za-z0-9._ ()\-]", "_", name) or "document"
+
+
+def split_base_ext(filename: str):
+    """Split filename into base and extension."""
+    m = re.match(r"^(.*?)(\.[^.]+)?$", filename)
+    return (m.group(1) or filename), (m.group(2) or "")
+
+
+def key_exists(s3_client, bucket: str, key: str) -> bool:
+    """Check if a key exists in S3."""
+    try:
+        s3_client.head_object(Bucket=bucket, Key=key)
+        return True
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code")
+        if code in ("404", "NoSuchKey", "NotFound"):
+            return False
+        raise
+
+
+def dedup_key(s3_client, bucket: str, key: str) -> str:
+    """Generate a unique key by appending (n) if key exists."""
+    if not key_exists(s3_client, bucket, key):
+        return key
+    folder, name = (key.rsplit("/", 1) + [""])[:2]
+    base, ext = split_base_ext(name)
+    n = 1
+    while True:
+        cand = f"{folder}/{base}({n}){ext}" if folder else f"{base}({n}){ext}"
+        if not key_exists(s3_client, bucket, cand):
+            return cand
+        n += 1
+
+
+def build_prefix(FPCID: str, year: str, month: str, day: str, LMRId: str) -> str:
+    """Build S3 prefix path."""
+    return f"{ROOT_PREFIX}/{FPCID}/{year}/{month}/{day}/{LMRId}/upload"
+
+
+def upload_bytes(s3_client, bucket: str, key: str, body: bytes, content_type="application/octet-stream"):
+    """Upload bytes to S3."""
+    return s3_client.put_object(Bucket=bucket, Key=key, Body=body, ContentType=content_type)
+
+
+def read_efs_file(path: str) -> tuple:
+    """Read file from EFS and return (bytes, content_type, size_bytes)."""
+    # Check if file exists first
+    if not os.path.exists(path):
+        # Try to provide helpful debugging info
+        dir_path = os.path.dirname(path)
+        filename = os.path.basename(path)
+        print(f"[DEBUG] File not found at: {path}")
+        print(f"[DEBUG] Directory: {dir_path}")
+        print(f"[DEBUG] Filename: {filename}")
+        
+        # Check if directory exists
+        if os.path.exists(dir_path):
+            print(f"[DEBUG] Directory exists. Contents:")
+            try:
+                files = os.listdir(dir_path)
+                for f in files[:10]:  # Show first 10 files
+                    print(f"[DEBUG]   - {f}")
+                if len(files) > 10:
+                    print(f"[DEBUG]   ... and {len(files) - 10} more files")
+            except Exception as e:
+                print(f"[DEBUG] Could not list directory: {e}")
+        else:
+            print(f"[DEBUG] Directory does not exist!")
+        
+        raise FileNotFoundError(f"EFS file not found: {path}")
+    
+    with open(path, "rb") as f:
+        b = f.read()
+    ext = os.path.splitext(path)[1].lower()
+    ctype = {
+        ".pdf": "application/pdf",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif"
+    }.get(ext, "application/octet-stream")
+    return b, ctype, len(b)
+
+
+def upload_from_efs_to_s3(
+    s3_client,
+    efs_path: str,
+    FPCID: str,
+    LMRId: str,
+    year: str,
+    month: str,
+    day: str,
+    document_name: str = None,
+    bucket: str = BUCKET
+) -> dict:
+    """
+    Upload file from EFS to S3 with metadata.
+    Returns dict with document_key, metadata_key, s3_key, metadata.
+    """
+    # Ensure year, month, day are zero-padded strings
+    year = str(year)
+    month = str(month).zfill(2)
+    day = str(day).zfill(2)
+    
+    # Build S3 prefix
+    prefix = build_prefix(str(FPCID), year, month, day, str(LMRId))
+    
+    # Sanitize filename
+    filename = sanitize_name(os.path.basename(efs_path))
+    doc_key = dedup_key(s3_client, bucket, f"{prefix}/document/{filename}")
+    
+    # Read file from EFS
+    print(f"[INFO] Reading file from EFS: {efs_path}")
+    content, content_type, size_bytes = read_efs_file(efs_path)
+    
+    # Upload document to S3
+    print(f"[INFO] Uploading to S3: s3://{bucket}/{doc_key}")
+    put_resp = upload_bytes(s3_client, bucket, doc_key, content, content_type)
+    
+    # Create metadata
+    meta_dir = f"{prefix}/metadata/"
+    meta_name = sanitize_name(os.path.basename(doc_key)) + ".json"
+    meta_key = f"{meta_dir}{meta_name}"
+    
+    metadata = {
+        "FPCID": str(FPCID),
+        "LMRId": str(LMRId),
+        "file_name": filename,
+        "s3_bucket": bucket,
+        "s3_key": doc_key,
+        "uploaded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "content_type": content_type,
+        "size_bytes": size_bytes,
+        "etag": put_resp.get("ETag", "").strip('"'),
+        "prefix_parts": {"year": year, "month": month, "day": day},
+        "_source": "efs_upload"
+    }
+    
+    # Add document_name if provided
+    if document_name:
+        metadata["document_name"] = str(document_name)
+    
+    # Upload metadata to S3
+    print(f"[INFO] Uploading metadata to S3: s3://{bucket}/{meta_key}")
+    upload_bytes(s3_client, bucket, meta_key, json.dumps(metadata, indent=2).encode("utf-8"), "application/json")
+    
+    print(f"[✓] Successfully uploaded file and metadata to S3")
+    
+    return {
+        "document_key": doc_key,
+        "metadata_key": meta_key,
+        "s3_key": doc_key,
+        "metadata": metadata,
+        "bucket": bucket
+    }
+# ---------- End S3 Upload Utilities ----------
 
 
 def Ingestion(state: PipelineState) -> PipelineState:
@@ -106,13 +275,46 @@ def Ingestion(state: PipelineState) -> PipelineState:
                 day = body.get("day")
                 # entity_type = body.get("entity_type")  # Ignore for now as requested
                 
-                # Extract bucket and key from file path
-                # Assuming file path is like "LMRFileDoc/3580/2025/10/13/1/upload/filename.ext"
-                bucket = "lendingwise-aiagent"  # Default bucket
-                key = file_path
-                
                 print(f"[INFO] Processing direct SQS message format")
                 print(f"[INFO] FPCID: {FPCID}, LMRId: {LMRId}, File: {file_path}")
+                
+                # Check if file_path is an EFS path (starts with /mnt/efs)
+                if file_path.startswith("/mnt/efs"):
+                    print(f"[INFO] Detected EFS path, uploading to S3...")
+                    
+                    # Upload from EFS to S3
+                    try:
+                        upload_result = upload_from_efs_to_s3(
+                            s3_client=s3,
+                            efs_path=file_path,
+                            FPCID=FPCID,
+                            LMRId=LMRId,
+                            year=year,
+                            month=month,
+                            day=day,
+                            document_name=document_name,
+                            bucket=BUCKET
+                        )
+                        
+                        # Update variables with S3 locations
+                        bucket = upload_result["bucket"]
+                        key = upload_result["s3_key"]
+                        
+                        print(f"[✓] File uploaded from EFS to S3: s3://{bucket}/{key}")
+                    except FileNotFoundError:
+                        print(f"[ERROR] EFS file not found: {file_path}")
+                        if receipt:
+                            sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt)
+                        continue
+                    except Exception as e:
+                        print(f"[ERROR] Failed to upload from EFS to S3: {e}")
+                        if receipt:
+                            sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt)
+                        continue
+                else:
+                    # File path is already an S3 key
+                    bucket = "lendingwise-aiagent"  # Default bucket
+                    key = file_path
                 
             else:
                 # Legacy S3 event format
@@ -145,25 +347,38 @@ def Ingestion(state: PipelineState) -> PipelineState:
 
             # Handle metadata based on message format
             if "FPCID" in body and "LMRId" in body and "file" in body:
-                # For new direct format, create metadata from SQS message
-                meta = {
-                    "FPCID": str(FPCID),
-                    "LMRId": str(LMRId),
-                    "document_name": document_name,
-                    "file_name": os.path.basename(key),
-                    "s3_bucket": bucket,
-                    "s3_key": key,
-                    "year": year,
-                    "month": month,
-                    "day": day,
-                    "_source": "direct_sqs_message"
-                }
-                print("\n====================== 📄 DIRECT SQS MESSAGE CONTENT ======================")
-                try:
-                    print(json.dumps(meta, indent=2))
-                except Exception:
-                    print(str(meta))
-                print("=====================================================================\n")
+                # For new direct format, check if we uploaded from EFS
+                if file_path.startswith("/mnt/efs") and 'upload_result' in locals():
+                    # Use metadata from the S3 upload
+                    meta = upload_result["metadata"]
+                    # Add metadata S3 path
+                    meta["_metadata_s3_path"] = f"s3://{bucket}/{upload_result['metadata_key']}"
+                    print("\n====================== 📄 EFS UPLOAD METADATA ======================")
+                    try:
+                        print(json.dumps(meta, indent=2))
+                    except Exception:
+                        print(str(meta))
+                    print("====================================================================\n")
+                else:
+                    # For direct S3 path, create metadata from SQS message
+                    meta = {
+                        "FPCID": str(FPCID),
+                        "LMRId": str(LMRId),
+                        "document_name": document_name,
+                        "file_name": os.path.basename(key),
+                        "s3_bucket": bucket,
+                        "s3_key": key,
+                        "year": year,
+                        "month": month,
+                        "day": day,
+                        "_source": "direct_sqs_message"
+                    }
+                    print("\n====================== 📄 DIRECT SQS MESSAGE CONTENT ======================")
+                    try:
+                        print(json.dumps(meta, indent=2))
+                    except Exception:
+                        print(str(meta))
+                    print("=====================================================================\n")
             else:
                 # Legacy format - fetch metadata from S3
                 meta = fetch_metadata(bucket, key)

@@ -47,7 +47,8 @@ RUN mkdir -p outputs \
 #     chown -R appuser:appuser /app
 # USER appuser
 
-# No EXPOSE needed since we're not running web server
+# Expose port 8000 for FastAPI service
+EXPOSE 8000
 
 # Default CMD - can be overridden in docker-compose.yml
 CMD ["python", "sqs_worker.py"]

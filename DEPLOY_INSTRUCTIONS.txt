@@ -1,0 +1,193 @@
+================================================================================
+                    LENDINGWISE - DEPLOYMENT INSTRUCTIONS
+================================================================================
+
+THREE CONTAINERS DEPLOYED:
+  1. lendingwise-api (port 8000) - FastAPI service
+  2. lendingwise-sqs-worker - Document processing
+  3. lendingwise-cross-validation-watcher - Validation monitoring
+
+================================================================================
+QUICK DEPLOY (CLEAN START)
+================================================================================
+
+Windows:
+  deploy.cmd
+
+Linux/Mac:
+  chmod +x deploy.sh
+  ./deploy.sh
+
+This script will:
+  1. Stop and remove old containers
+  2. Clean up any conflicting containers
+  3. Build and start all services
+  4. Wait 30 seconds
+  5. Test API health
+  6. Show status
+
+================================================================================
+MANUAL DEPLOYMENT
+================================================================================
+
+Step 1: Clean up old containers
+  docker-compose down
+  docker rm -f lendingwise-api lendingwise-sqs-worker lendingwise-cross-validation-watcher
+
+Step 2: Deploy
+  docker-compose up -d --build
+
+Step 3: Check status
+  docker-compose ps
+
+Step 4: Test API
+  curl http://localhost:8000/
+
+================================================================================
+VERIFY DEPLOYMENT
+================================================================================
+
+Check all containers running:
+  docker-compose ps
+
+Expected output:
+  NAME                                  STATUS    PORTS
+  lendingwise-api                       Up        0.0.0.0:8000->8000/tcp
+  lendingwise-sqs-worker                Up
+  lendingwise-cross-validation-watcher  Up
+
+Test API:
+  curl http://localhost:8000/
+
+Expected response:
+  {
+    "message": "AI Agents Database API is running",
+    "version": "1.0.0",
+    "status": "healthy"
+  }
+
+================================================================================
+VIEW LOGS
+================================================================================
+
+All services:
+  docker-compose logs -f
+
+Specific service:
+  docker-compose logs -f api
+  docker-compose logs -f sqs-worker
+  docker-compose logs -f cross-validation-watcher
+
+Last 50 lines:
+  docker-compose logs --tail=50
+
+================================================================================
+MANAGEMENT COMMANDS
+================================================================================
+
+Stop all:
+  docker-compose down
+
+Restart all:
+  docker-compose restart
+
+Restart specific service:
+  docker-compose restart api
+  docker-compose restart sqs-worker
+
+Update and redeploy:
+  git pull
+  docker-compose down
+  docker-compose up -d --build
+
+================================================================================
+API ENDPOINTS (http://localhost:8000)
+================================================================================
+
+GET  /                                        Health check
+GET  /docs                                    Swagger documentation
+GET  /api/documents/{fpcid}/{lmrid}          Get all documents
+GET  /api/documents/{fpcid}/{lmrid}/{doc_id} Get specific document
+POST /create-agent-record                     Create agent record
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Issue: Container name conflict
+Solution: Run deploy.cmd (Windows) or deploy.sh (Linux/Mac)
+  Or manually: docker rm -f lendingwise-api lendingwise-sqs-worker lendingwise-cross-validation-watcher
+
+Issue: Port 8000 already in use
+Solution: 
+  - Find process: netstat -ano | findstr :8000 (Windows)
+  - Find process: lsof -i :8000 (Linux/Mac)
+  - Kill the process or change port in docker-compose.yml
+
+Issue: API not responding
+Solution:
+  docker-compose logs api
+  docker-compose restart api
+
+Issue: Database connection error
+Solution:
+  Check DB_HOST in docker-compose.yml (should be 3.129.145.187)
+  Verify database is accessible
+
+================================================================================
+CONFIGURATION
+================================================================================
+
+All configuration in docker-compose.yml with defaults:
+  AWS_REGION=us-east-2
+  DB_HOST=3.129.145.187
+  DB_PORT=3306
+  DB_USER=aiagentdb
+  DB_PASSWORD=Agents@1252
+  DB_NAME=stage_newskinny
+  OCR_MODE=ocr+llm
+
+No .env file needed!
+
+To override, create .env file with your values.
+
+================================================================================
+DATABASE SETUP (ONE TIME)
+================================================================================
+
+Add the doc_verification_result field:
+
+  ALTER TABLE stage_newskinny.tblaiagents 
+  ADD COLUMN doc_verification_result TEXT NULL;
+
+This stores validation results as JSON.
+
+================================================================================
+AWS DEPLOYMENT
+================================================================================
+
+1. SSH into EC2
+2. Clone/upload code
+3. Run: ./deploy.sh (or deploy.cmd on Windows)
+4. Open port 8000 in security group
+5. Test: curl http://YOUR_SERVER_IP:8000/
+
+================================================================================
+QUICK REFERENCE
+================================================================================
+
+Deploy:    deploy.cmd (Windows) or ./deploy.sh (Linux/Mac)
+           OR: docker-compose up -d --build
+
+Stop:      docker-compose down
+
+Logs:      docker-compose logs -f
+
+Status:    docker-compose ps
+
+Test:      curl http://localhost:8000/
+
+Docs:      http://localhost:8000/docs
+
+================================================================================
+

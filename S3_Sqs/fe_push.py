@@ -114,12 +114,14 @@ def main():
         # Example insert (you can modify these values as needed)
         insert_data_into_tblaiagents(
             connection,
-            FPCID="3363",
-            LMRId="45",
-            document_name="Driving license",
+            FPCID="3580",
+            LMRId="2",
+            doc_id="23",
+            document_name="Drivers License",
             agent_name="Identity Verification Agent",
             tool="ocr+llm",
-            date="2025-10-17"
+            date="2025-10-20",
+            user_id="12"
         )
         connection.close()
         print("🔒 Connection closed.")

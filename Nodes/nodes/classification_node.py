@@ -622,4 +622,70 @@ def Classification(state: PipelineState) -> PipelineState:
         "actual_document_match": not actual_document_mismatch
     })
     
+    # If classification FAILED, store validation result to database immediately
+    # (because pipeline won't reach extraction node for failed docs)
+    if not passed:
+        try:
+            import json
+            from datetime import datetime, timezone
+            from ..tools.db import update_tblaigents_by_keys
+            
+            # Determine failure type and suggestions based on message
+            failure_type = "validation_failed"
+            suggestions = []
+            message_lower = message.lower()
+            
+            if "mismatch" in message_lower or "wrong" in message_lower:
+                failure_type = "document_mismatch"
+                suggestions = [
+                    "Upload the correct document type that matches what you selected",
+                    "Ensure the document image is clear and readable",
+                    "Check that you're uploading the front side of the document"
+                ]
+            elif "expired" in message_lower:
+                failure_type = "expired"
+                suggestions = [
+                    "Please upload a valid, non-expired document",
+                    "If you recently renewed, upload the new document"
+                ]
+            elif "content" in message_lower:
+                failure_type = "content_mismatch"
+                suggestions = [
+                    "The document content doesn't match what was specified",
+                    "Please verify you uploaded the correct document",
+                    "Re-upload with a clearer image if text is hard to read"
+                ]
+            else:
+                suggestions = [
+                    "Please re-upload a clear photo of your document",
+                    "Ensure all text and information is visible",
+                    "Contact support if the issue persists"
+                ]
+            
+            # Generate validation result JSON
+            doc_verification_result_json = json.dumps({
+                "status": "fail",
+                "reason": message,
+                "type": failure_type,
+                "stage": "classification",
+                "suggestions": suggestions,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+            # Update database with failure details
+            if state.ingestion:
+                update_tblaigents_by_keys(
+                    FPCID=state.ingestion.FPCID,
+                    LMRId=state.ingestion.LMRId,
+                    updates={
+                        "document_status": "fail",
+                        "doc_verification_result": doc_verification_result_json,
+                        "cross_validation": False,
+                    },
+                    document_name=state.ingestion.document_name,
+                )
+                print(f"[✓] Validation result saved to database: {failure_type}")
+        except Exception as e:
+            print(f"[WARN] Failed to save validation result to database: {e}")
+    
     return state

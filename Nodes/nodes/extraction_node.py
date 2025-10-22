@@ -639,6 +639,67 @@ def Extract(state: PipelineState) -> PipelineState:
     except Exception as e:
         print(f"[WARN] Failed to upload extraction result to S3: {e}")
 
+    # --- Generate doc_verification_result JSON ---
+    doc_verification_result_json = None
+    
+    try:
+        if state.classification and state.classification.passed:
+            # PASS case: Simple success message
+            doc_verification_result_json = json.dumps({
+                "status": "pass",
+                "message": "Your document is valid. Everything is verified successfully.",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            print("[✓] Validation passed - generating success message")
+        else:
+            # FAIL case: Detailed failure with reasons and suggestions
+            failure_message = state.classification.message if state.classification else "Validation failed"
+            failure_type = "validation_failed"
+            failure_stage = "classification"
+            suggestions = []
+            
+            # Determine failure type and suggestions based on message
+            message_lower = failure_message.lower()
+            
+            if "mismatch" in message_lower or "wrong" in message_lower:
+                failure_type = "document_mismatch"
+                suggestions = [
+                    "Upload the correct document type that matches what you selected",
+                    "Ensure the document image is clear and readable",
+                    "Check that you're uploading the front side of the document"
+                ]
+            elif "expired" in message_lower:
+                failure_type = "expired"
+                suggestions = [
+                    "Please upload a valid, non-expired document",
+                    "If you recently renewed, upload the new document"
+                ]
+            elif "content" in message_lower:
+                failure_type = "content_mismatch"
+                suggestions = [
+                    "The document content doesn't match what was specified",
+                    "Please verify you uploaded the correct document",
+                    "Re-upload with a clearer image if text is hard to read"
+                ]
+            else:
+                suggestions = [
+                    "Please re-upload a clear photo of your document",
+                    "Ensure all text and information is visible",
+                    "Contact support if the issue persists"
+                ]
+            
+            doc_verification_result_json = json.dumps({
+                "status": "fail",
+                "reason": failure_message,
+                "type": failure_type,
+                "stage": failure_stage,
+                "suggestions": suggestions,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            print(f"[✗] Validation failed: {failure_type} - {failure_message}")
+    except Exception as e:
+        print(f"[WARN] Failed to generate doc_verification_result: {e}")
+    
     # --- Update DB record ---
     try:
         ingestion = state.ingestion
@@ -660,6 +721,7 @@ def Extract(state: PipelineState) -> PipelineState:
                 "metadata_s3_path": (ingestion.metadata_s3_path if ingestion else None),
                 "verified_result_s3_path": (f"s3://lendingwise-aiagent/{key}" if key else None),
                 "cross_validation": cross_validation,
+                "doc_verification_result": doc_verification_result_json,
             },
             document_name=(ingestion.document_name if ingestion else None),
         )

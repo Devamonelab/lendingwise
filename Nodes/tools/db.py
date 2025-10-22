@@ -137,6 +137,7 @@ def update_tblaigents_by_keys(FPCID: str, LMRId: str, updates: Dict[str, Any], d
         "metadata_s3_path": updates.get("metadata_s3_path"),
         "verified_result_s3_path": updates.get("verified_result_s3_path"),
         "cross_validation": updates.get("cross_validation"),
+        "doc_verification_result": updates.get("doc_verification_result"),
     }
 
     set_parts = []
