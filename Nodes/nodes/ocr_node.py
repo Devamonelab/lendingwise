@@ -246,8 +246,6 @@ def OCR(state: PipelineState) -> PipelineState:
     """
     if state.ingestion is None:
         raise ValueError("Ingestion state missing; run Ingestion node first.")
-    if state.tamper_check is None:
-        raise ValueError("Tamper check state missing; run TamperCheck node first.")
 
     # Prefer doc category from ingestion document_type
     doc_category = (state.ingestion.document_type or "").strip()
@@ -264,9 +262,6 @@ def OCR(state: PipelineState) -> PipelineState:
 
     print(f"\n=== PROCEEDING WITH DOCUMENT PROCESSING ===")
     log_agent_event(state, "OCR", "start")
-    
-    # Check if tamper check passed (warnings are already printed in TamperCheck node)
-    tamper_check_passed = state.tamper_check.status in ["OK"]
 
     # Run OCR pipeline with the requested mode
     result = run_pipeline(bucket, key, mode)
@@ -280,7 +275,6 @@ def OCR(state: PipelineState) -> PipelineState:
         doc_category=doc_category,
         document_name=structured.get("document_name"),
         ocr_json=structured,
-        tamper_check_passed=tamper_check_passed,
     )
     log_agent_event(state, "OCR", "completed", {"doc_type": result.get("doc_type")})
     return state

@@ -21,22 +21,6 @@ def ensure_state_dict(state: Any) -> Dict[str, Any]:
     return {}
 
 
-def load_baseline_file(baseline_file_path: str) -> Dict[str, str]:
-    """Load baseline file for tamper detection comparison."""
-    if not baseline_file_path or not os.path.exists(baseline_file_path):
-        return {}
-    
-    try:
-        with open(baseline_file_path, 'r', encoding='utf-8') as f:
-            baseline_data = json.load(f)
-            if isinstance(baseline_data, dict):
-                return baseline_data
-        return {}
-    except Exception as e:
-        print(f"Warning: Could not load baseline file {baseline_file_path}: {e}")
-        return {}
-
-
 def save_json_file(data: Dict[str, Any], file_path: str) -> bool:
     """Save data to JSON file."""
     try:

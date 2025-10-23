@@ -37,7 +37,6 @@ COPY . .
 # Create necessary directories for outputs and reports
 RUN mkdir -p outputs \
     Nodes/outputs \
-    Nodes/outputs/temp_tamper_check \
     cross_validation/reports \
     result
 

@@ -28,16 +28,6 @@ class IngestionState(BaseModel):
     raw_metadata: Optional[Dict[str, Any]] = None
 
 
-class TamperCheckState(BaseModel):
-    """State for tamper detection results."""
-    status: str  # OK, SUSPICIOUS, TAMPERED, ERROR
-    reasons: list[str]
-    human_verification_required: bool
-    meta: Optional[Dict[str, Any]] = None
-    s3_bucket: Optional[str] = None
-    s3_key: Optional[str] = None
-
-
 class OCRState(BaseModel):
     """State for OCR processing results."""
     bucket: str
@@ -46,7 +36,6 @@ class OCRState(BaseModel):
     doc_category: str
     document_name: Optional[str] = None
     ocr_json: Dict[str, Any]
-    tamper_check_passed: bool = True
 
 
 class ClassificationState(BaseModel):
@@ -67,7 +56,6 @@ class ExtractionState(BaseModel):
 class PipelineState(BaseModel):
     """Main pipeline state containing all sub-states."""
     ingestion: Optional[IngestionState] = None
-    tamper_check: Optional[TamperCheckState] = None
     ocr: Optional[OCRState] = None
     classification: Optional[ClassificationState] = None
     extraction: Optional[ExtractionState] = None

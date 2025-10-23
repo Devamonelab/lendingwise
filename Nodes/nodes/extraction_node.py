@@ -77,13 +77,6 @@ DOC_FIELDS = {
         "firstName","middleName","lastName","suffix","socialSecurityNumber","number"
     ],
     
-    # Indian Identity Documents
-    "aadhaar_card": [
-        "firstName","middleName","lastName","suffix","dateOfBirth","dob",
-        "address","addressLine1","city","state","pinCode","country",
-        "aadhaarNumber","idNumber","issueDate","sex","gender"
-    ],
-    
     # Immigration Documents
     "permanent_resident_card": [
         "firstName","middleName","lastName","suffix","dateOfBirth",
@@ -453,10 +446,6 @@ def _map_document_name_to_doc_type(name: str, classification_type: str = None, f
     if ("social" in combined and "security" in combined) or "ssn" in combined or "ss_card" in combined:
         return "social_security_card"
     
-    # Indian Identity Documents
-    if any(term in combined for term in ["aadhaar", "aadhar", "adhar", "uidai"]) or "aadhaar_card" in combined:
-        return "aadhaar_card"
-    
     # Immigration Documents
     if ("permanent" in combined and "resident" in combined) or "green_card" in combined or "prc" in combined or "i-551" in combined:
         return "permanent_resident_card"
@@ -704,12 +693,10 @@ def Extract(state: PipelineState) -> PipelineState:
     try:
         ingestion = state.ingestion
         classification = state.classification
-        document_status = (
-            "pass" if classification and classification.passed else (
-                "fail" if classification and not classification.passed and state.tamper_check and not state.tamper_check.human_verification_required else "human verification"
-            )
-        )
-        cross_validation = document_status in {"pass", "human verification"}
+        # Note: document_status will be updated by validation_check_node
+        # Here we just set initial status based on classification
+        document_status = "pass" if classification and classification.passed else "fail"
+        cross_validation = False  # Will be set by validation_check_node if needed
 
         update_tblaigents_by_keys(
             FPCID=(ingestion.FPCID if ingestion and hasattr(ingestion, 'FPCID') else fpcid),

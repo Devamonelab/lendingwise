@@ -1,14 +1,25 @@
 from fastapi import FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from datetime import datetime
 import mysql.connector
 from mysql.connector import Error
 import uuid
+import os
 
 app = FastAPI(
     title="AI Agents Database API",
     description="Simple API for creating AI agent records",
     version="1.0.0"
+)
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins - restrict this in production
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],  # Allows all headers
 )
 
 
@@ -30,11 +41,11 @@ def get_database_connection():
     """Connect to the MySQL database and return the connection object."""
     try:
         connection = mysql.connector.connect(
-            host='3.129.145.187',
-            port=3306,
-            user='aiagentdb',
-            password='Agents@1252',
-            database='stage_newskinny'
+            host=os.getenv('DB_HOST'),
+            port=os.getenv('DB_PORT'),
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD'),
+            database=os.getenv('DB_NAME')
         )
         if connection.is_connected():
             return connection

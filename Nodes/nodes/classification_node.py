@@ -47,10 +47,6 @@ def _map_display_name_to_identity_subtype(name: Optional[str]) -> str:
     if ("social" in n and "security" in n) or "ssn" in n or "ss_card" in n:
         return "social_security_card"
     
-    # Indian Identity Documents
-    if any(term in n for term in ["aadhaar", "aadhar", "adhar", "uidai"]) or "aadhaar_card" in n:
-        return "aadhaar_card"
-    
     # Immigration Documents
     if ("permanent" in n and "resident" in n) or "green_card" in n or "prc" in n or "i-551" in n:
         return "permanent_resident_card"
@@ -174,10 +170,6 @@ def _guess_identity_subtype_from_ocr(ocr_json: Dict[str, Any]) -> str:
     # Social Security
     if ("social" in blob and "security" in blob) or "ssn" in blob:
         return "social_security_card"
-
-    # Indian Identity Documents
-    if any(term in blob for term in ["aadhaar", "aadhar", "adhar", "uidai", "government of india"]) or "unique identification" in blob:
-        return "aadhaar_card"
     
     # Immigration Documents
     if ("permanent" in blob and "resident" in blob) or "green_card" in blob or "i-551" in blob:
@@ -326,10 +318,6 @@ def _extract_actual_document_name_from_ocr(ocr_json: Dict[str, Any]) -> str:
     # Quick heuristic checks first
     blob_lower = text_blob.lower()
     
-    # Indian documents
-    if any(term in blob_lower for term in ["aadhaar", "aadhar", "adhar", "government of india", "uidai"]):
-        return "Aadhaar Card"
-    
     # US documents
     if "driver" in blob_lower and "license" in blob_lower:
         return "Driver's License"
@@ -358,7 +346,6 @@ Return ONLY the document name in this exact format:
 - "State ID"
 - "Passport"
 - "Passport Card"
-- "Aadhaar Card"
 - "Social Security Card"
 - "Birth Certificate"
 - "Marriage Certificate"

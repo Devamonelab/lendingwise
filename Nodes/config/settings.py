@@ -26,9 +26,6 @@ ROUTE_LABELS = ["bank_statement", "identity", "property", "entity", "loan", "unk
 OCR_MODE = os.getenv("OCR_MODE", "ocr+llm")
 DOC_CATEGORY = os.getenv("DOC_CATEGORY", "")
 
-# Baseline Configuration
-BASELINE_FILE = os.getenv("BASELINE_FILE", "")
-
 # Textract Configuration
 TEXTRACT_MAX_WAIT_SECONDS = int(os.getenv("TEXTRACT_MAX_WAIT_SECONDS", "600"))
 TEXTRACT_FEATURE_TYPES = ["TABLES", "FORMS"]

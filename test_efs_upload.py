@@ -8,7 +8,7 @@ This script:
    - Read the file from EFS
    - Upload to S3
    - Create metadata
-   - Continue with the full pipeline (Tamper Check -> OCR -> Classification -> Extraction)
+   - Continue with the full pipeline (OCR -> Classification -> Extraction -> Validation)
 
 Usage:
     python test_efs_upload.py
@@ -76,10 +76,10 @@ def send_test_message():
         print(f"2. Read file from: {TEST_MESSAGE['file']}")
         print(f"3. Upload to S3 at: LMRFileDocNew/{TEST_MESSAGE['FPCID']}/{TEST_MESSAGE['year']}/{TEST_MESSAGE['month']:02d}/{TEST_MESSAGE['day']:02d}/{TEST_MESSAGE['LMRId']}/upload/document/")
         print("4. Create metadata JSON in S3")
-        print("5. Run Tamper Check")
-        print("6. Run OCR")
-        print("7. Run Classification")
-        print("8. Run Extraction")
+        print("5. Run OCR")
+        print("6. Run Classification")
+        print("7. Run Extraction")
+        print("8. Run Validation Check")
         
         print("\n" + "=" * 80)
         print("🚀 TO START PROCESSING:")

@@ -6,10 +6,10 @@ from langgraph.graph import END, StateGraph
 
 from .config.state_models import PipelineState
 from .nodes.ingestion_node import Ingestion
-from .nodes.tamper_check_node import TamperCheck
 from .nodes.ocr_node import OCR
 from .nodes.classification_node import Classification
 from .nodes.extraction_node import Extract
+from .nodes.validation_check_node import ValidationCheck
 from .nodes.workflow_router import Classified_or_not
 
 
@@ -21,17 +21,16 @@ def create_pipeline() -> StateGraph:
 
     # Add nodes
     workflow.add_node("Ingestion", Ingestion)
-    workflow.add_node("Tamper Check", TamperCheck)
     workflow.add_node("OCR", OCR)
     workflow.add_node("Document Classification", Classification)
     workflow.add_node("Document Data Extraction", Extract)
+    workflow.add_node("Validation Check", ValidationCheck)
 
     # Set entry point
     workflow.set_entry_point("Ingestion")
     
     # Add edges
-    workflow.add_edge("Ingestion", "Tamper Check")
-    workflow.add_edge("Tamper Check", "OCR")
+    workflow.add_edge("Ingestion", "OCR")
     workflow.add_edge("OCR", "Document Classification")
 
     # Add conditional edges
@@ -40,6 +39,10 @@ def create_pipeline() -> StateGraph:
         Classified_or_not,
         {"Document Data Extraction": "Document Data Extraction", "OCR": "OCR"}
     )
+    
+    # Add validation check after extraction
+    workflow.add_edge("Document Data Extraction", "Validation Check")
+    workflow.add_edge("Validation Check", END)
 
     return workflow
 

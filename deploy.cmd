@@ -28,7 +28,7 @@ docker-compose ps
 echo.
 
 echo Step 6: Testing API health...
-curl http://localhost:8000/
+curl http://localhost:5000/
 echo.
 
 echo ================================================================================
@@ -36,8 +36,8 @@ echo                           Deployment Complete!
 echo ================================================================================
 echo.
 echo Services running:
-echo   - API: http://localhost:8000
-echo   - API Docs: http://localhost:8000/docs
+echo   - API: http://localhost:5000
+echo   - API Docs: http://localhost:5000/docs
 echo   - SQS Worker: background
 echo   - Cross-Validation: background
 echo.

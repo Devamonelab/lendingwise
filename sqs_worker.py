@@ -1,7 +1,7 @@
 """
 Long-running worker that waits for SQS messages and processes them through the pipeline.
 
-Starts the existing nodes in sequence: Ingestion -> Tamper Check -> OCR -> Classification -> Extraction.
+Starts the existing nodes in sequence: Ingestion -> OCR -> Classification -> Extraction -> Validation Check.
 The Ingestion node already internally polls SQS until a message is available.
 
 Usage (PowerShell):
@@ -21,10 +21,10 @@ import boto3
 from botocore.exceptions import ClientError
 from Nodes.config.state_models import PipelineState, IngestionState
 from Nodes.nodes.ingestion_node import Ingestion
-from Nodes.nodes.tamper_check_node import TamperCheck
 from Nodes.nodes.ocr_node import OCR
 from Nodes.nodes.classification_node import Classification
 from Nodes.nodes.extraction_node import Extract
+from Nodes.nodes.validation_check_node import ValidationCheck
 from Nodes.tools.aws_services import get_s3_client
 from Nodes.tools.db import fetch_agent_context
 
@@ -77,7 +77,6 @@ def process_one_document() -> None:
         print(f"[Worker] S3 Location: s3://{bucket}/{key}")
 
     # Run the rest of the pipeline for this document
-    state = TamperCheck(state)
     state = OCR(state)
     state = Classification(state)
     if not state.classification or not state.classification.passed:
@@ -105,9 +104,15 @@ def process_one_document() -> None:
         # The normal SQS polling will handle re-uploads when they arrive
         return
     
-    # Classification passed - proceed with extraction
+    # Classification passed - proceed with extraction and validation
     print(f"[Worker] ✓ Classification passed for {state.ingestion.document_name if state.ingestion else 'document'}")
     state = Extract(state)
+    print(f"[Worker] ✓ Extraction completed")
+    
+    # Run validation check
+    state = ValidationCheck(state)
+    print(f"[Worker] ✓ Validation check completed")
+    
     print(f"[Worker] ✓ Document processing completed successfully")
 
 
