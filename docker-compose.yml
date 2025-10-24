@@ -67,6 +67,7 @@ services:
       - ./outputs:/app/outputs
       - ./Nodes/outputs:/app/Nodes/outputs
       - ./result:/app/result
+      - /mnt/efs:/mnt/efs:ro
     networks:
       - lendingwise-network
     extra_hosts:

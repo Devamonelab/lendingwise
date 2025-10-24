@@ -268,6 +268,7 @@ def Ingestion(state: PipelineState) -> PipelineState:
                 # New direct message format
                 FPCID = body.get("FPCID")
                 LMRId = body.get("LMRId")
+                checklistId = body.get("checklistId")  # Extract checklistId from SQS
                 file_path = body.get("file")
                 document_name = body.get("document-name")
                 year = body.get("year")
@@ -276,7 +277,7 @@ def Ingestion(state: PipelineState) -> PipelineState:
                 # entity_type = body.get("entity_type")  # Ignore for now as requested
                 
                 print(f"[INFO] Processing direct SQS message format")
-                print(f"[INFO] FPCID: {FPCID}, LMRId: {LMRId}, File: {file_path}")
+                print(f"[INFO] FPCID: {FPCID}, LMRId: {LMRId}, checklistId: {checklistId}, File: {file_path}")
                 
                 # Check if file_path is an EFS path (starts with /mnt/efs)
                 if file_path.startswith("/mnt/efs"):
@@ -330,9 +331,10 @@ def Ingestion(state: PipelineState) -> PipelineState:
                 bucket = record.get("s3", {}).get("bucket", {}).get("name")
                 key = unquote_plus(record.get("s3", {}).get("object", {}).get("key", ""))
                 
-                # For legacy format, we'll extract FPCID/LMRId from metadata later
+                # For legacy format, we'll extract FPCID/LMRId/checklistId from metadata later
                 FPCID = None
                 LMRId = None
+                checklistId = None
                 document_name = None
                 year = None
                 month = None
@@ -364,6 +366,7 @@ def Ingestion(state: PipelineState) -> PipelineState:
                     meta = {
                         "FPCID": str(FPCID),
                         "LMRId": str(LMRId),
+                        "checklistId": str(checklistId) if checklistId else None,
                         "document_name": document_name,
                         "file_name": os.path.basename(key),
                         "s3_bucket": bucket,
@@ -389,9 +392,10 @@ def Ingestion(state: PipelineState) -> PipelineState:
                     print(str(meta))
                 print("=====================================================================\n")
                 
-                # Extract FPCID/LMRId from metadata for legacy format
+                # Extract FPCID/LMRId/checklistId from metadata for legacy format
                 FPCID = meta.get("FPCID")
                 LMRId = meta.get("LMRId")
+                checklistId = meta.get("checklistId")
             
             # Try to determine document name from various sources
             potential_doc_name = (
@@ -402,12 +406,12 @@ def Ingestion(state: PipelineState) -> PipelineState:
             )
             
             db_ctx = {}
-            if FPCID and LMRId:
+            if FPCID and checklistId:
                 try:
                     # Pass the potential document name to get more specific context
-                    db_ctx = fetch_agent_context(str(FPCID), str(LMRId), potential_doc_name) or {}
-                    print("\n====================== 🗄️ DB CONTEXT (BY FPCID + LMRId + document_name) ======================")
-                    print(f"Keys -> FPCID={FPCID}, LMRId={LMRId}, document_name={potential_doc_name}")
+                    db_ctx = fetch_agent_context(str(FPCID), str(checklistId), potential_doc_name) or {}
+                    print("\n====================== 🗄️ DB CONTEXT (BY FPCID + checklistId + document_name) ======================")
+                    print(f"Keys -> FPCID={FPCID}, checklistId={checklistId}, document_name={potential_doc_name}")
                     try:
                         print(json.dumps(db_ctx, indent=2))
                     except Exception:
@@ -425,6 +429,7 @@ def Ingestion(state: PipelineState) -> PipelineState:
                 "metadata_s3_path": meta.get("_metadata_s3_path"),
                 "FPCID": FPCID,
                 "LMRId": LMRId,
+                "checklistId": checklistId,
                 # Prefer DB values when available, fallback to metadata
                 "document_name": (
                     db_ctx.get("document_name")
@@ -449,6 +454,7 @@ def Ingestion(state: PipelineState) -> PipelineState:
                 merged_preview = {
                     "FPCID": item.get("FPCID"),
                     "LMRId": item.get("LMRId"),
+                    "checklistId": item.get("checklistId"),
                     "document_name": item.get("document_name"),
                     "agent_name": item.get("agent_name"),
                     "tool": item.get("tool"),
@@ -471,6 +477,7 @@ def Ingestion(state: PipelineState) -> PipelineState:
                 metadata_s3_path=item.get("metadata_s3_path"),
                 FPCID=item.get("FPCID"),
                 LMRId=item.get("LMRId"),
+                checklistId=item.get("checklistId"),
                 document_name=item.get("document_name"),
                 document_type=item.get("document_type"),
                 agent_name=item.get("agent_name"),

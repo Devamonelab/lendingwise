@@ -700,7 +700,7 @@ def Extract(state: PipelineState) -> PipelineState:
 
         update_tblaigents_by_keys(
             FPCID=(ingestion.FPCID if ingestion and hasattr(ingestion, 'FPCID') else fpcid),
-            LMRId=(ingestion.LMRId if ingestion and hasattr(ingestion, 'LMRId') else lmrid),
+            checklistId=(ingestion.checklistId if ingestion and hasattr(ingestion, 'checklistId') else None),
             updates={
                 "file_s3_location": (f"s3://{ingestion.s3_bucket}/{ingestion.s3_key}" if ingestion else None),
                 "document_status": document_status,
@@ -711,6 +711,7 @@ def Extract(state: PipelineState) -> PipelineState:
                 "doc_verification_result": doc_verification_result_json,
             },
             document_name=(ingestion.document_name if ingestion else None),
+            LMRId=(ingestion.LMRId if ingestion and hasattr(ingestion, 'LMRId') else lmrid),
         )
         print("[✓] DB row updated in stage_newskinny.tblaigents (allowed fields only)")
     except Exception as e:

@@ -44,11 +44,12 @@ def write_enhanced_cross_validation_report_to_s3(
             day = f"{now.day:02d}"
             print(f"[WARN] Using current date for cross-validation report: {year}-{month}-{day}")
         
-        # Build S3 key path matching existing convention
+        # Build S3 key path using checklistId (or fallback to lmrid if not available)
+        checklistId = report.validation_summary.checklistId or report.validation_summary.lmrid
         s3_key = (
             f"LMRFileDocNew/{report.validation_summary.fpcid}/{year}/{month}/{day}/"
             f"{report.validation_summary.lmrid}/upload/cross-validation-result/"
-            f"{report.validation_summary.fpcid}_{report.validation_summary.lmrid}_cross-validation.json"
+            f"{report.validation_summary.fpcid}_{checklistId}_cross-validation.json"
         )
         
         # Create simplified report

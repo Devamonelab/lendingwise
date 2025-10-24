@@ -663,13 +663,14 @@ def Classification(state: PipelineState) -> PipelineState:
             if state.ingestion:
                 update_tblaigents_by_keys(
                     FPCID=state.ingestion.FPCID,
-                    LMRId=state.ingestion.LMRId,
+                    checklistId=state.ingestion.checklistId,
                     updates={
                         "document_status": "fail",
                         "doc_verification_result": doc_verification_result_json,
                         "cross_validation": False,
                     },
                     document_name=state.ingestion.document_name,
+                    LMRId=state.ingestion.LMRId,
                 )
                 print(f"[✓] Validation result saved to database: {failure_type}")
         except Exception as e:

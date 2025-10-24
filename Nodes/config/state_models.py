@@ -14,6 +14,7 @@ class IngestionState(BaseModel):
     metadata_s3_path: Optional[str] = None
     FPCID: Optional[str] = None
     LMRId: Optional[str] = None
+    checklistId: Optional[str] = None
     document_name: Optional[str] = None
     document_type: Optional[str] = None
     agent_name: Optional[str] = None

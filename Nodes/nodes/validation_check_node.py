@@ -670,13 +670,14 @@ def ValidationCheck(state: PipelineState) -> PipelineState:
         if state.ingestion:
             update_tblaigents_by_keys(
                 FPCID=state.ingestion.FPCID,
-                LMRId=state.ingestion.LMRId,
+                checklistId=state.ingestion.checklistId,
                 updates={
                     "document_status": document_status,
                     "doc_verification_result": json.dumps(doc_verification_result),
                     "cross_validation": not validation_result.passed,  # Flag for human review if issues
                 },
                 document_name=state.ingestion.document_name,
+                LMRId=state.ingestion.LMRId,
             )
             print(f"\n[✓] Database updated with validation status: {document_status}")
             

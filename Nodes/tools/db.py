@@ -68,11 +68,11 @@ def insert_tblaigents(row: Dict[str, Any]) -> None:
 
 
 
-def fetch_agent_context(FPCID: str, LMRId: str, document_name: str = None) -> Dict[str, Any]:
+def fetch_agent_context(FPCID: str, checklistId: str, document_name: str = None) -> Dict[str, Any]:
     """
-    Fetch minimal agent context for a borrower/loan using FPCID + LMRId.
+    Fetch minimal agent context for a borrower/loan using FPCID + checklistId.
     If document_name is provided, it will try to match the specific document first,
-    then fall back to any document for the FPCID/LMRId combination.
+    then fall back to any document for the FPCID/checklistId combination.
 
     Returns a dict that may contain: document_name, agent_name, tool.
     If no row is found or an error occurs, returns an empty dict.
@@ -87,19 +87,19 @@ def fetch_agent_context(FPCID: str, LMRId: str, document_name: str = None) -> Di
         if document_name:
             sql = (
                 "SELECT document_name, agent_name, tool FROM stage_newskinny.tblaiagents "
-                "WHERE FPCID = %s AND LMRId = %s AND document_name = %s LIMIT 1"
+                "WHERE FPCID = %s AND checklistId = %s AND document_name = %s LIMIT 1"
             )
-            cursor.execute(sql, [FPCID, LMRId, document_name])
+            cursor.execute(sql, [FPCID, checklistId, document_name])
             row = cursor.fetchone()
             if row:
                 return row
         
-        # Fallback: find any document for this FPCID/LMRId combination
+        # Fallback: find any document for this FPCID/checklistId combination
         sql = (
             "SELECT document_name, agent_name, tool FROM stage_newskinny.tblaiagents "
-            "WHERE FPCID = %s AND LMRId = %s LIMIT 1"
+            "WHERE FPCID = %s AND checklistId = %s LIMIT 1"
         )
-        cursor.execute(sql, [FPCID, LMRId])
+        cursor.execute(sql, [FPCID, checklistId])
         row = cursor.fetchone()
         return row or {}
     except Error as e:
@@ -118,16 +118,19 @@ def fetch_agent_context(FPCID: str, LMRId: str, document_name: str = None) -> Di
             pass
 
 
-def update_tblaigents_by_keys(FPCID: str, LMRId: str, updates: Dict[str, Any], document_name: str | None = None) -> None:
+def update_tblaigents_by_keys(FPCID: str, checklistId: str, updates: Dict[str, Any], document_name: str | None = None, LMRId: str | None = None) -> None:
     """
-    Update only selected nullable fields for an existing row identified by FPCID + LMRId.
+    Update only selected nullable fields for an existing row identified by FPCID + checklistId + document_name.
+
+    CRITICAL: Updates are based STRICTLY on FPCID + checklistId + document_name combination.
+    All three fields MUST match for a row to be updated.
 
     Allowed fields to update:
       file_s3_location, document_status, uploadedat, metadata_s3_path,
-      verified_result_s3_path, cross_validation
+      verified_result_s3_path, cross_validation, LMRId
     """
-    if not FPCID or not LMRId:
-        print("[DB] update skipped: missing FPCID or LMRId")
+    if not FPCID or not checklistId or not document_name:
+        print(f"[DB] update skipped: missing required fields - FPCID={FPCID}, checklistId={checklistId}, document_name={document_name}")
         return
 
     allowed = {
@@ -138,6 +141,7 @@ def update_tblaigents_by_keys(FPCID: str, LMRId: str, updates: Dict[str, Any], d
         "verified_result_s3_path": updates.get("verified_result_s3_path"),
         "cross_validation": updates.get("cross_validation"),
         "doc_verification_result": updates.get("doc_verification_result"),
+        "LMRId": LMRId,  # Allow updating LMRId from SQS message
     }
 
     set_parts = []
@@ -147,17 +151,18 @@ def update_tblaigents_by_keys(FPCID: str, LMRId: str, updates: Dict[str, Any], d
         if col in updates and val is not None:
             set_parts.append(f"{col} = %s")
             values.append(val)
+        elif col == "LMRId" and val is not None:
+            set_parts.append(f"{col} = %s")
+            values.append(val)
 
     if not set_parts:
         print("[DB] update skipped: no allowed fields provided")
         return
 
-    # Build WHERE with optional document_name filter to target the correct row
-    where = "WHERE FPCID = %s AND LMRId = %s"
-    values.extend([FPCID, LMRId])
-    if document_name:
-        where += " AND document_name = %s"
-        values.append(document_name)
+    # Build WHERE clause - STRICTLY using FPCID + checklistId + document_name
+    # This ensures we only update the exact row that matches all three identifiers
+    where = "WHERE FPCID = %s AND checklistId = %s AND document_name = %s"
+    values.extend([FPCID, checklistId, document_name])
 
     sql = (
         f"UPDATE stage_newskinny.tblaiagents SET {', '.join(set_parts)} "
@@ -169,8 +174,17 @@ def update_tblaigents_by_keys(FPCID: str, LMRId: str, updates: Dict[str, Any], d
     try:
         conn = _make_connection()
         cursor = conn.cursor()
+        
+        # Debug logging
+        print(f"[DB] Executing UPDATE with FPCID={FPCID}, checklistId={checklistId}, document_name={document_name}")
+        print(f"[DB] SQL: {sql}")
+        print(f"[DB] Values: {values}")
+        
         cursor.execute(sql, values)
+        rows_affected = cursor.rowcount
         conn.commit()
+        
+        print(f"[DB] Update completed: {rows_affected} row(s) affected")
     except Error as e:
         print(f"[DB] Update failed: {e}")
     finally:

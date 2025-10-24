@@ -49,11 +49,13 @@ class ValidationSummary:
     """Summary of validation results."""
     fpcid: str
     lmrid: str
-    status: str  # "PASS" or "FAIL"
-    score: int  # 0-100
-    threshold: int  # 85
-    message: str
-    timestamp: str
+    checklistId: Optional[str] = None
+    document_name: Optional[str] = None
+    status: str = "PENDING"  # "PASS" or "FAIL"
+    score: int = 0  # 0-100
+    threshold: int = 85  # 85
+    message: str = ""
+    timestamp: str = ""
     note: Optional[str] = None
 
 

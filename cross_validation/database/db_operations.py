@@ -35,18 +35,21 @@ def _coerce_bool(val) -> bool:
     return False
 
 
-def fetch_all_statuses_grouped(conn) -> Dict[Tuple[str, str], bool]:
-    """Return ALL-TRUE status for each (FPCID, LMRId) pair."""
+def fetch_all_statuses_grouped(conn) -> Dict[Tuple[str, str, str, str], bool]:
+    """Return ALL-TRUE status for each (FPCID, checklistId, document_name, LMRId) combination."""
     sql = (
-        "SELECT FPCID, LMRId, MIN(COALESCE(cross_validation, 0)) AS all_true "
-        "FROM tblaiagents GROUP BY FPCID, LMRId"
+        "SELECT FPCID, checklistId, document_name, LMRId, "
+        "MIN(COALESCE(cross_validation, 0)) AS all_true "
+        "FROM tblaiagents "
+        "WHERE checklistId IS NOT NULL AND document_name IS NOT NULL "
+        "GROUP BY FPCID, checklistId, document_name, LMRId"
     )
     cur = conn.cursor()
     try:
         cur.execute(sql)
-        out: Dict[Tuple[str, str], bool] = {}
-        for FPCID, LMRId, val in cur.fetchall() or []:
-            out[(str(FPCID), str(LMRId))] = _coerce_bool(val)
+        out: Dict[Tuple[str, str, str, str], bool] = {}
+        for FPCID, checklistId, document_name, LMRId, val in cur.fetchall() or []:
+            out[(str(FPCID), str(checklistId), str(document_name), str(LMRId))] = _coerce_bool(val)
         return out
     finally:
         try:
@@ -55,10 +58,10 @@ def fetch_all_statuses_grouped(conn) -> Dict[Tuple[str, str], bool]:
             pass
 
 
-def fetch_docs_for_pair(
-    conn, FPCID: str, LMRId: str, require_file_s3: bool = True
-) -> List[Dict[str, Optional[str]]]:
-    """Fetch document rows for a FPCID/LMRId pair where verified_result_s3_path is set."""
+def fetch_doc_for_validation(
+    conn, FPCID: str, checklistId: str, document_name: str, LMRId: str, require_file_s3: bool = True
+) -> Dict[str, Optional[str]]:
+    """Fetch a single document row for validation based on FPCID + checklistId + document_name."""
     cols = [
         "document_name",
         "agent_name", 
@@ -68,10 +71,13 @@ def fetch_docs_for_pair(
         "verified_result_s3_path",
         "uploadedat",
         "date",
+        "checklistId",
+        "LMRId",
     ]
     where = [
         "FPCID = %s",
-        "LMRId = %s",
+        "checklistId = %s",
+        "document_name = %s",
         "verified_result_s3_path IS NOT NULL",
         "verified_result_s3_path <> ''",
     ]
@@ -80,16 +86,15 @@ def fetch_docs_for_pair(
 
     sql = (
         f"SELECT {', '.join(cols)} FROM tblaiagents "
-        f"WHERE {' AND '.join(where)}"
+        f"WHERE {' AND '.join(where)} LIMIT 1"
     )
     cur = conn.cursor(dictionary=True)
     try:
-        cur.execute(sql, (FPCID, LMRId))
-        rows = cur.fetchall() or []
-        return [
-            {k: (str(v) if v is not None else None) for k, v in row.items()}
-            for row in rows
-        ]
+        cur.execute(sql, (FPCID, checklistId, document_name))
+        row = cur.fetchone()
+        if row:
+            return {k: (str(v) if v is not None else None) for k, v in row.items()}
+        return {}
     finally:
         try:
             cur.close()
@@ -139,29 +144,43 @@ def fetch_borrower_data_from_tblfile(conn, FPCID: str, LMRId: str) -> Optional[B
             pass
 
 
-def update_is_verified(conn, FPCID: str, LMRId: str, flag: bool, s3_report_path: Optional[str] = None) -> None:
+def update_is_verified(conn, FPCID: str, checklistId: str, document_name: str, flag: bool, s3_report_path: Optional[str] = None, LMRId: str = None) -> None:
     """
-    Update the Is_varified status and cross_validation_report_path for a FPCID/LMRId pair.
+    Update the Is_varified status and cross_validation_report_path for a specific document.
+    
+    Uses FPCID + checklistId + document_name for precise row matching.
     
     Args:
         conn: Database connection
         FPCID: Tenant ID
-        LMRId: Loan file ID
+        checklistId: Checklist ID
+        document_name: Document name
         flag: Verification status (True/False)
         s3_report_path: S3 path to the cross-validation report
+        LMRId: Loan file ID (optional, can be updated if provided)
     """
+    if not FPCID or not checklistId or not document_name:
+        print(f"[DB] update_is_verified skipped: missing required fields - FPCID={FPCID}, checklistId={checklistId}, document_name={document_name}")
+        return
+    
+    # Build SET clause
+    set_parts = ["`Is_varified` = %s"]
+    params = [int(flag)]
+    
     if s3_report_path:
-        sql = (
-            "UPDATE tblaiagents SET `Is_varified` = %s, `cross_validation_report_path` = %s "
-            "WHERE FPCID = %s AND LMRId = %s"
-        )
-        params = (int(flag), s3_report_path, FPCID, LMRId)
-    else:
-        sql = (
-            "UPDATE tblaiagents SET `Is_varified` = %s "
-            "WHERE FPCID = %s AND LMRId = %s"
-        )
-        params = (int(flag), FPCID, LMRId)
+        set_parts.append("`cross_validation_report_path` = %s")
+        params.append(s3_report_path)
+    
+    if LMRId:
+        set_parts.append("`LMRId` = %s")
+        params.append(LMRId)
+    
+    # Build WHERE clause - STRICTLY using FPCID + checklistId + document_name
+    sql = (
+        f"UPDATE tblaiagents SET {', '.join(set_parts)} "
+        "WHERE FPCID = %s AND checklistId = %s AND document_name = %s"
+    )
+    params.extend([FPCID, checklistId, document_name])
     
     cur = conn.cursor()
     try:

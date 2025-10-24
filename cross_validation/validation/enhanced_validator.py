@@ -51,7 +51,9 @@ class EnhancedValidator:
         documents: List[DocumentDetails],
         borrower_data: Optional[BorrowerData],
         FPCID: str,
-        LMRId: str
+        LMRId: str,
+        checklistId: Optional[str] = None,
+        document_name: Optional[str] = None
     ) -> VerificationReport:
         """
         Main validation function.
@@ -89,6 +91,8 @@ class EnhancedValidator:
         report = self._generate_report(
             FPCID=FPCID,
             LMRId=LMRId,
+            checklistId=checklistId,
+            document_name=document_name,
             documents=[doc.document_name for doc in documents],
             field_results=field_results,
             score=score,
@@ -365,6 +369,8 @@ class EnhancedValidator:
         self,
         FPCID: str,
         LMRId: str,
+        checklistId: Optional[str],
+        document_name: Optional[str],
         documents: List[str],
         field_results: List[FieldResult],
         score: int,
@@ -411,6 +417,8 @@ class EnhancedValidator:
         validation_summary = ValidationSummary(
             fpcid=FPCID,
             lmrid=LMRId,
+            checklistId=checklistId,
+            document_name=document_name,
             status=status,
             score=score,
             threshold=85,
