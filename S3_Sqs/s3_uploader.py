@@ -84,6 +84,7 @@ def send_sqs_message(
     year: str,
     month: str,
     day: str,
+    checklistId: str = None,
     entity_type: str = "LLC",
     queue_url: str = "https://sqs.us-east-2.amazonaws.com/685551735768/lendingwise"
 ) -> dict:
@@ -98,6 +99,10 @@ def send_sqs_message(
         "month": int(month),
         "day": int(day)
     }
+    
+    # Add checklistId if provided
+    if checklistId:
+        message["checklistId"] = str(checklistId)
     
     try:
         response = SQS.send_message(
@@ -121,6 +126,7 @@ def upload_document(
     day: str | None = None,
     bucket: str = BUCKET,
     document_name: str | None = None,
+    checklistId: str | None = None,
     send_sqs: bool = False,
     entity_type: str = "LLC",
 ):
@@ -158,6 +164,9 @@ def upload_document(
     # If provided, embed the logical document_name so ingestion can match DB rows accurately
     if document_name:
         metadata["document_name"] = str(document_name)
+    # If provided, embed checklistId for DB context matching
+    if checklistId:
+        metadata["checklistId"] = str(checklistId)
 
     upload_bytes(bucket, meta_key, json.dumps(metadata, indent=2).encode("utf-8"), "application/json")
 
@@ -173,6 +182,7 @@ def upload_document(
             year=year,
             month=month,
             day=day,
+            checklistId=checklistId,
             entity_type=entity_type
         )
         result["sqs_message_id"] = sqs_response.get("MessageId")
@@ -190,6 +200,7 @@ def parse_args():
     p.add_argument("--day", help="DD (default: today)")
     p.add_argument("--bucket", default=BUCKET)
     p.add_argument("--document-name", dest="document_name", help="Logical document name (e.g., 'Adhar card', 'Driving License')")
+    p.add_argument("--checklistId", dest="checklistId", help="Checklist ID for document tracking")
     p.add_argument("--send-sqs", action="store_true", help="Send SQS message in new direct format")
     p.add_argument("--entity-type", dest="entity_type", default="LLC", help="Entity type (default: LLC)")
     return p.parse_args()
@@ -203,6 +214,7 @@ if __name__ == "__main__":
         year=a.year, month=a.month, day=a.day,
         bucket=a.bucket,
         document_name=a.document_name,
+        checklistId=a.checklistId,
         send_sqs=a.send_sqs,
         entity_type=a.entity_type,
     )

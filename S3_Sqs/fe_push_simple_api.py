@@ -27,12 +27,12 @@ app.add_middleware(
 class AgentRecordCreate(BaseModel):
     """Model for creating a new agent record"""
     FPCID: str = Field(..., description="FPC ID", example="3580")
-    LMRId: str = Field(..., description="LMR ID", example="1")
     doc_id: str = Field(..., description="Document ID", example="23")
     document_name: str = Field(..., description="Name of the document", example="Driving license")
     agent_name: str = Field(..., description="Name of the agent", example="Identity Verification Agent")
     tool: str = Field(..., description="Tool used (e.g., ocr+llm)", example="ocr+llm")
     date: str = Field(..., description="Date in YYYY-MM-DD format", example="2025-10-20")
+    checklistId: str = Field(..., description="Checklist ID", example="163")
     user_id: str = Field(..., description="User ID", example="12")
 
 
@@ -41,11 +41,11 @@ def get_database_connection():
     """Connect to the MySQL database and return the connection object."""
     try:
         connection = mysql.connector.connect(
-            host=os.getenv('DB_HOST'),
-            port=os.getenv('DB_PORT'),
-            user=os.getenv('DB_USER'),
-            password=os.getenv('DB_PASSWORD'),
-            database=os.getenv('DB_NAME')
+            host=os.getenv("DB_HOST"),
+            port=os.getenv("DB_PORT"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            database=os.getenv("DB_NAME")
         )
         if connection.is_connected():
             return connection
@@ -76,7 +76,9 @@ def ensure_table_exists(connection):
         cross_validation BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         Is_varified BOOLEAN DEFAULT FALSE,
-        user_id VARCHAR(255)
+        checklistId VARCHAR(255),
+        user_id VARCHAR(255),
+        doc_verification_result TEXT DEFAULT NULL
     ) ENGINE=InnoDB;
     """
     try:
@@ -109,13 +111,15 @@ async def create_agent_record(record: AgentRecordCreate):
     
     All fields are required:
     - **FPCID**: FPC ID
-    - **LMRId**: LMR ID
     - **doc_id**: Document ID
     - **document_name**: Name of the document
     - **agent_name**: Name of the agent
     - **tool**: Tool used (e.g., ocr+llm)
     - **date**: Date in YYYY-MM-DD format
+    - **checklistId**: Checklist ID
     - **user_id**: User ID
+    
+    Note: LMRId will be provided via SQS message during document processing
     """
     connection = get_database_connection()
     
@@ -124,7 +128,7 @@ async def create_agent_record(record: AgentRecordCreate):
         
         insert_query = """
         INSERT INTO tblaiagents (
-            id, FPCID, LMRId, doc_id, document_name, agent_name, tool, date, cross_validation, created_at, Is_varified, user_id
+            id, FPCID, doc_id, document_name, agent_name, tool, date, cross_validation, created_at, Is_varified, checklistId, user_id
         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
         
@@ -135,7 +139,6 @@ async def create_agent_record(record: AgentRecordCreate):
         cursor.execute(insert_query, (
             record_id,
             record.FPCID,
-            record.LMRId,
             record.doc_id,
             record.document_name,
             record.agent_name,
@@ -144,6 +147,7 @@ async def create_agent_record(record: AgentRecordCreate):
             False,  # default value for cross_validation
             created_at,
             False,  # default value for Is_varified
+            record.checklistId,
             record.user_id
         ))
         connection.commit()
@@ -155,12 +159,12 @@ async def create_agent_record(record: AgentRecordCreate):
             "record_id": record_id,
             "data": {
                 "FPCID": record.FPCID,
-                "LMRId": record.LMRId,
                 "doc_id": record.doc_id,
                 "document_name": record.document_name,
                 "agent_name": record.agent_name,
                 "tool": record.tool,
                 "date": record.date,
+                "checklistId": record.checklistId,
                 "user_id": record.user_id,
                 "created_at": created_at.isoformat()
             }
